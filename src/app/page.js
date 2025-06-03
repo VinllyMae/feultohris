@@ -1,101 +1,190 @@
-import Image from "next/image";
+'use client';
+
+import { useState, useEffect } from 'react';
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  onAuthStateChanged,
+  signOut
+} from 'firebase/auth';
+import { ref, set, get, serverTimestamp } from 'firebase/database';
+import { auth, database } from './lib/firebase';
+import RoleManagement from './components/RoleManagement';
+import ApplicantDashboard from './components/ApplicantDashboard';
+import HRDashboard from './components/HRDashboard/HRDashboard';
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.js
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [isRegistering, setIsRegistering] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('');
+  const [role, setRole] = useState('Admin');
+  const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [error, setError] = useState('');
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUser(user);
+      if (!user) {
+        setProfile(null);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const fetchUserProfile = async (uid) => {
+    setLoadingProfile(true);
+    try {
+      const snapshot = await get(ref(database, `profiles/${uid}`));
+      if (snapshot.exists()) {
+        setProfile(snapshot.val());
+      } else {
+        setProfile(null);
+        setError('No profile data found.');
+      }
+    } catch (err) {
+      setError('Failed to load user profile.');
+      setProfile(null);
+    } finally {
+      setLoadingProfile(false);
+    }
+  };
+
+  const handleRegister = async () => {
+    setError('');
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      await set(ref(database, `profiles/${user.uid}`), {
+        email,
+        username,
+        role,
+        createdAt: serverTimestamp(),
+      });
+
+      setEmail('');
+      setPassword('');
+      setUsername('');
+      setRole('Admin');
+
+      alert('Registration successful! Please log in.');
+      setIsRegistering(false);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleLogin = async () => {
+    setError('');
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      setUser(userCredential.user);
+      await fetchUserProfile(userCredential.user.uid);
+      setEmail('');
+      setPassword('');
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    setProfile(null);
+    setUser(null);
+  };
+
+  if (user && loadingProfile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <p className="text-gray-500 text-lg">Loading your profile...</p>
+      </div>
+    );
+  }
+
+  if (user && profile) {
+    return (
+      <div className="min-h-screen flex flex-col bg-gray-50">
+        {/* Main content fills remaining space */}
+        <main className="flex-grow overflow-auto">
+          {profile.role === 'Admin' && <RoleManagement />}
+          {profile.role === 'Applicant' && <ApplicantDashboard user={user} profile={profile} />}
+          {profile.role === 'HR' && <HRDashboard user={user} profile={profile} />}
+        </main>
+      </div>
+    );
+  }
+
+  // Default: login/register form
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4 sm:p-6 md:p-8">
+      <h1 className="text-2xl sm:text-3xl font-bold mb-6 text-center">
+        {isRegistering ? 'Register' : 'Login'}
+      </h1>
+
+      <div className="bg-white p-6 sm:p-8 rounded shadow-md w-full max-w-xs sm:max-w-md space-y-4">
+        <input
+          type="email"
+          placeholder="Email"
+          className="w-full p-2 border rounded"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
+        <input
+          type="password"
+          placeholder="Password"
+          className="w-full p-2 border rounded"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
+        {isRegistering && (
+          <>
+            <input
+              type="text"
+              placeholder="Username"
+              className="w-full p-2 border rounded"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+            <select
+              className="w-full p-2 border rounded"
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+            >
+              <option>Admin</option>
+              <option>HR</option>
+              <option>Board Member</option>
+              <option>Applicant</option>
+            </select>
+          </>
+        )}
+
+        {error && <p className="text-red-600 text-center">{error}</p>}
+
+        <button
+          className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 transition"
+          onClick={isRegistering ? handleRegister : handleLogin}
         >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+          {isRegistering ? 'Register' : 'Login'}
+        </button>
+
+        <p
+          onClick={() => {
+            setIsRegistering(!isRegistering);
+            setError('');
+          }}
+          className="text-sm text-blue-600 cursor-pointer hover:underline text-center"
         >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+          {isRegistering
+            ? 'Already have an account? Login'
+            : "Don't have an account? Register"}
+        </p>
+      </div>
     </div>
   );
 }
