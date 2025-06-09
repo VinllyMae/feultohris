@@ -12,7 +12,6 @@ import { auth, database } from './lib/firebase';
 import RoleManagement from './components/RoleManagement';
 import ApplicantDashboard from './components/ApplicantDashboard';
 import HRDashboard from './components/HRDashboard/HRDashboard';
-
 export default function Home() {
   const [isRegistering, setIsRegistering] = useState(true);
   const [email, setEmail] = useState('');
@@ -24,15 +23,24 @@ export default function Home() {
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [error, setError] = useState('');
 
+  const [loadingAuth, setLoadingAuth] = useState(true);
+
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setUser(user);
-      if (!user) {
+      if (user) {
+        setLoadingAuth(true);
+        await fetchUserProfile(user.uid);
+        setLoadingAuth(false);
+      } else {
         setProfile(null);
+        setLoadingAuth(false);
       }
     });
+
     return () => unsubscribe();
   }, []);
+
 
   const fetchUserProfile = async (uid) => {
     setLoadingProfile(true);
@@ -96,19 +104,21 @@ export default function Home() {
     setUser(null);
   };
 
-  if (user && loadingProfile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <p className="text-gray-500 text-lg">Loading your profile...</p>
-      </div>
-    );
-  }
+if (loadingAuth || (user && loadingProfile)) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+      <p className="text-gray-500 text-lg">Loading your profile...</p>
+    </div>
+  );
+}
+
 
   if (user && profile) {
     return (
       <div className="min-h-screen flex flex-col bg-gray-50">
+
         {/* Main content fills remaining space */}
-        <main className="flex-grow overflow-auto">
+        <main>
           {profile.role === 'Admin' && <RoleManagement />}
           {profile.role === 'Applicant' && <ApplicantDashboard user={user} profile={profile} />}
           {profile.role === 'HR' && <HRDashboard user={user} profile={profile} />}
